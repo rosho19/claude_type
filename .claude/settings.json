@@ -1,0 +1,67 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/open_game.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/notify_tool.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/close_game.sh"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/permission_game.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/resume_game.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/kill_server.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
