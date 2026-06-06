@@ -1,4 +1,6 @@
 #!/bin/bash
-curl -s -X POST http://localhost:3000/permission \
-  > /dev/null 2>&1
+# PermissionRequest — dim game and disable input
+[[ -f "$HOME/.config/monkeytype/enabled" ]] || exit 0
+MONKEY=$(command -v monkeytype 2>/dev/null) || exit 0
+"$MONKEY" event permission
 exit 0

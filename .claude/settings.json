@@ -10,18 +10,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/notify_tool.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
@@ -38,17 +26,6 @@
           {
             "type": "command",
             "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/permission_game.sh"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/resume_game.sh"
           }
         ]
       }

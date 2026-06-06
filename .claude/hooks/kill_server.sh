@@ -1,4 +1,6 @@
 #!/bin/bash
-curl -s -X POST http://localhost:3000/shutdown \
-  > /dev/null 2>&1
+# SessionEnd — shut down the Electron app
+[[ -f "$HOME/.config/monkeytype/enabled" ]] || exit 0
+MONKEY=$(command -v monkeytype 2>/dev/null) || exit 0
+"$MONKEY" event shutdown
 exit 0

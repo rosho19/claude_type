@@ -1,6 +1,6 @@
 #!/bin/bash
-curl -s -X POST http://localhost:3000/stop \
-  -H 'Content-Type: application/json' \
-  -d "{\"session_id\":\"${CLAUDE_SESSION_ID}\"}" \
-  > /dev/null 2>&1
+# Stop — show done banner
+[[ -f "$HOME/.config/monkeytype/enabled" ]] || exit 0
+MONKEY=$(command -v monkeytype 2>/dev/null) || exit 0
+"$MONKEY" event stop --session="${CLAUDE_SESSION_ID}"
 exit 0
