@@ -1,13 +1,18 @@
 {
   "name": "monkeytype-overlay",
-  "version": "1.0.0",
-  "main": "server.js",
+  "version": "2.0.0",
+  "description": "Monkeytype typing overlay for Claude Code sessions",
+  "main": "src/main.js",
+  "bin": {
+    "monkeytype": "./bin/cli.js"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "electron src/main.js",
+    "postinstall": "xattr -d com.apple.quarantine node_modules/electron/dist/Electron.app 2>/dev/null || true"
   },
   "dependencies": {
+    "electron": "^28.0.0",
     "express": "^4.18.2",
-    "open": "^8.4.2",
     "ws": "^8.14.2"
   }
 }
