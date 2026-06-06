@@ -4,7 +4,7 @@
 
 MONKEY=$(command -v monkeytype 2>/dev/null) || exit 0
 
-# Start Electron if the server isn't up yet
+# Launch the overlay if the server isn't up yet
 if ! curl -sf --max-time 1 http://localhost:3000/health > /dev/null 2>&1; then
   "$MONKEY" launch
   # Poll until ready (max 3s)
@@ -14,5 +14,5 @@ if ! curl -sf --max-time 1 http://localhost:3000/health > /dev/null 2>&1; then
   done
 fi
 
-"$MONKEY" event start --session="${CLAUDE_SESSION_ID}"
+"$MONKEY" event start --session="${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"
 exit 0

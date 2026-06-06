@@ -615,6 +615,13 @@ function handleBackspace() {
   if (started) updateStats();
 }
 
+// ── Native panel bridge ───────────────────────────────────────────────────────
+// Talks to the Swift shell via the WKWebView script-message handler named
+// "panel". No-op in a plain browser, so the game still runs standalone for dev.
+function bridge(cmd) {
+  window.webkit?.messageHandlers?.panel?.postMessage(cmd);
+}
+
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connectWS() {
   let ws;
@@ -623,6 +630,8 @@ function connectWS() {
   ws.addEventListener('message', e => {
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
+
+    if (msg.type === 'control' && msg.value === 'quit') { bridge('quit'); return; }
     if (msg.type !== 'status') return;
 
     switch (msg.value) {
@@ -630,6 +639,7 @@ function connectWS() {
         hideBanner();
         inputEnabled = true;
         wordsEl.classList.remove('dimmed');
+        if (msg.show) bridge('show');   // new prompt → bring the panel to the front
         break;
       case 'done':
         showDoneBanner();
@@ -673,11 +683,7 @@ function showDoneBanner() {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'btn';
   closeBtn.textContent = 'close';
-  closeBtn.onclick = () => {
-    if (window.electronAPI) {
-      window.electronAPI.closeWindow();
-    }
-  };
+  closeBtn.onclick = () => bridge('hide');
 
   bannerEl.append(label, keepBtn, closeBtn);
 }

@@ -3,40 +3,35 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/open_game.sh"
-          }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/open_game.sh\"" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/resume_game.sh\"" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/close_game.sh"
-          }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/close_game.sh\"" }
         ]
       }
     ],
     "PermissionRequest": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/permission_game.sh"
-          }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/permission_game.sh\"" }
         ]
       }
     ],
     "SessionEnd": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/rushi/Desktop/cli_monkeytype/.claude/hooks/kill_server.sh"
-          }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/kill_server.sh\"" }
         ]
       }
     ]
