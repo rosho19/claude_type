@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node src/server.js",
     "build": "bash native/build.sh",
-    "postinstall": "bash native/build.sh || true"
+    "postinstall": "bash native/build.sh || true",
+    "test": "node test/reward-loop.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",
