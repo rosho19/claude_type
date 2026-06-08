@@ -29,6 +29,14 @@ Under the hood: a frameless macOS `NSPanel` hosts a WebView running the game
 (`src/game.html`); a small Node server (`src/server.js`) relays events over a
 WebSocket. No Electron — the native shell is a few hundred KB, compiled locally.
 
+## Your progress
+
+While Claude works, the panel tallies your words, wpm, and accuracy for the
+turn — surviving the brief idle resets between bursts. When Claude finishes, the
+banner reports what you racked up, and throws up a **new best!** flourish when
+you beat your record. Your best wpm and lifetime word count persist between
+sessions and show, quietly, in the corner of the panel.
+
 ## Requirements
 
 - **macOS** with **Xcode command-line tools** (`xcode-select --install`) — provides `swiftc`

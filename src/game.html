@@ -34,12 +34,19 @@
       height: 28px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       padding: 0 16px;
       font-size: 11px;
       letter-spacing: 0.12em;
       color: var(--sub-alt);
       background: var(--bg);
       flex-shrink: 0;
+    }
+
+    /* lifetime totals — subtle, right-aligned in the drag bar */
+    #lifetime {
+      letter-spacing: 0.08em;
+      color: var(--sub);
     }
 
     /* ── Banner ───────────────────────────────────────────── */
@@ -65,6 +72,22 @@
     #banner.working    { color: var(--sub); }
     #banner.done       { color: var(--main); }
     #banner.permission { color: var(--error); }
+
+    /* personal-best flourish in the done banner */
+    #banner .pb {
+      color: var(--bg);
+      background: var(--main);
+      padding: 1px 8px;
+      border-radius: 3px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      animation: pbPop 0.4s ease;
+    }
+    @keyframes pbPop {
+      0%   { transform: scale(0.6); opacity: 0; }
+      60%  { transform: scale(1.12); }
+      100% { transform: scale(1);    opacity: 1; }
+    }
 
     .btn {
       -webkit-app-region: no-drag;
@@ -207,7 +230,7 @@
 </head>
 <body>
 
-<div id="drag-bar">monkeytype</div>
+<div id="drag-bar"><span>monkeytype</span><span id="lifetime"></span></div>
 <div id="banner"></div>
 
 <div id="game">
@@ -321,6 +344,7 @@ const bannerEl  = document.getElementById('banner');
 const sWpm      = document.getElementById('s-wpm');
 const sRaw      = document.getElementById('s-raw');
 const sAcc      = document.getElementById('s-acc');
+const lifetimeEl = document.getElementById('lifetime');
 
 // ── Game state ────────────────────────────────────────────────────────────────
 const WORDS_INITIAL  = 100;
@@ -328,6 +352,7 @@ const WORDS_ADD      = 50;
 const WORDS_AHEAD    = 30;   // add more words when this many remain
 const LINE_HEIGHT    = 48;   // must match CSS --lh
 const VISIBLE_LINES  = 4;
+const IDLE_MS        = 2000;   // typing-burst / idle-reset threshold
 
 let wordEls    = [];
 let wIdx       = 0;
@@ -338,6 +363,14 @@ let startTime  = 0;
 let correctCh  = 0;
 let totalCh    = 0;
 let wordsOk    = 0;
+
+// session totals — survive idle resets; banked to storage once per Claude turn
+let sessWords     = 0;
+let sessCorrectCh = 0;
+let sessTotalCh   = 0;
+let sessTypingMs  = 0;
+let lastKeyTime   = 0;
+let lastSummary   = null;   // most recent finished session, for the done banner
 
 let idleTimer         = null;
 let caretTimer        = null;
@@ -439,10 +472,63 @@ function updateStats() {
   sAcc.textContent = acc + '%';
 }
 
+// ── Session totals + persistence ──────────────────────────────────────────────
+// The per-burst counters above reset on idle. These accumulate across the whole
+// Claude turn and are banked to localStorage when the turn ends, so wpm/words
+// progress persists between sessions and there's a personal best to chase.
+const STORE_KEY = 'monkeytype.stats.v1';
+
+function loadStore() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function saveStore(store) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch {}
+}
+
+function sessionSummary() {
+  const minutes = sessTypingMs / 60000;
+  const wpm = minutes > 0 ? Math.round((sessCorrectCh / 5) / minutes) : 0;
+  const acc = sessTotalCh > 0 ? Math.round((sessCorrectCh / sessTotalCh) * 100) : 100;
+  return { words: sessWords, wpm, acc, newBest: false };
+}
+
+function resetSession() {
+  sessWords = sessCorrectCh = sessTotalCh = sessTypingMs = 0;
+  lastKeyTime = 0;
+}
+
+// Bank the current session into lifetime storage. Returns its summary (with a
+// newBest flag) when there was typing to record, else null. Idempotent: it
+// clears the session, so a repeated call (e.g. a second `done`) records nothing.
+function commitSession() {
+  if (sessTotalCh === 0) return null;
+  const summary = sessionSummary();
+  const store = loadStore();
+  store.lifetimeWords = (store.lifetimeWords || 0) + summary.words;
+  if (summary.words >= 10 && summary.wpm > (store.bestWpm || 0)) {
+    store.bestWpm = summary.wpm;
+    summary.newBest = true;
+  }
+  saveStore(store);
+  resetSession();
+  updateLifetimeDisplay();
+  return summary;
+}
+
+function updateLifetimeDisplay() {
+  const store = loadStore();
+  const parts = [];
+  if (store.bestWpm)       parts.push('best ' + store.bestWpm);
+  if (store.lifetimeWords) parts.push(store.lifetimeWords.toLocaleString() + ' words');
+  lifetimeEl.textContent = parts.join('  ·  ');
+}
+
 // ── Idle reset (2 s) ──────────────────────────────────────────────────────────
 function resetIdle() {
   clearTimeout(idleTimer);
-  idleTimer = setTimeout(hardReset, 2000);
+  idleTimer = setTimeout(hardReset, IDLE_MS);
 }
 
 function hardReset() {
@@ -509,6 +595,14 @@ function handleChar(key) {
   resetIdle();
   totalCh++;
 
+  // session accumulation — independent of idle resets; banked per Claude turn.
+  // Only intervals shorter than the idle threshold count toward typing time, so
+  // pauses between bursts don't deflate the session wpm.
+  const now = Date.now();
+  if (lastKeyTime && now - lastKeyTime < IDLE_MS) sessTypingMs += now - lastKeyTime;
+  lastKeyTime = now;
+  sessTotalCh++;
+
   const wordEl  = wordEls[wIdx];
   const word    = wordEl.dataset.word;
   const nonExtra = wordEl.querySelectorAll('.char:not(.extra)');
@@ -518,6 +612,7 @@ function handleChar(key) {
     if (key === word[cIdx]) {
       charEl.className = 'char correct';
       correctCh++;
+      sessCorrectCh++;
     } else {
       charEl.className = 'char wrong';
     }
@@ -554,6 +649,7 @@ function handleSpace() {
   if (wrongs.length === 0 && cIdx >= word.length) {
     wordEl.classList.add('word-correct');
     wordsOk++;
+    sessWords++;
   } else {
     wordEl.classList.add('word-wrong');
   }
@@ -632,7 +728,7 @@ function connectWS() {
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
 
-    if (msg.type === 'control' && msg.value === 'quit') { bridge('quit'); return; }
+    if (msg.type === 'control' && msg.value === 'quit') { commitSession(); bridge('quit'); return; }
     if (msg.type !== 'status') return;
 
     switch (msg.value) {
@@ -640,13 +736,20 @@ function connectWS() {
         hideBanner();
         inputEnabled = true;
         wordsEl.classList.remove('dimmed');
-        if (msg.show) bridge('show');   // new prompt → bring the panel to the front
+        if (msg.show) {                 // new prompt → bank the prior turn, surface the panel
+          commitSession();
+          lastSummary = null;
+          bridge('show');
+        }
         break;
-      case 'done':
-        showDoneBanner();
+      case 'done': {
+        const summary = commitSession();
+        if (summary) lastSummary = summary;
+        showDoneBanner(lastSummary);
         inputEnabled = true;
         wordsEl.classList.remove('dimmed');
         break;
+      }
       case 'permission':
         showBanner('permission', '— waiting for your input');
         inputEnabled = false;
@@ -669,12 +772,22 @@ function showBanner(cls, text) {
   bannerEl.textContent = text;
 }
 
-function showDoneBanner() {
+function showDoneBanner(summary) {
   bannerEl.className = 'active done';
   bannerEl.innerHTML = '';
 
   const label = document.createElement('span');
-  label.textContent = '— claude is done';
+  label.textContent = summary
+    ? `— claude is done  ·  ${summary.words} words  ·  ${summary.wpm} wpm  ·  ${summary.acc}%`
+    : '— claude is done';
+  bannerEl.appendChild(label);
+
+  if (summary && summary.newBest) {
+    const pb = document.createElement('span');
+    pb.className = 'pb';
+    pb.textContent = 'new best!';
+    bannerEl.appendChild(pb);
+  }
 
   const keepBtn = document.createElement('button');
   keepBtn.className = 'btn';
@@ -686,7 +799,7 @@ function showDoneBanner() {
   closeBtn.textContent = 'close';
   closeBtn.onclick = () => bridge('hide');
 
-  bannerEl.append(label, keepBtn, closeBtn);
+  bannerEl.append(keepBtn, closeBtn);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -697,6 +810,7 @@ requestAnimationFrame(() => {
   presentedBottomRow = (VISIBLE_LINES - 1) * LINE_HEIGHT;
   updateCaret();
 });
+updateLifetimeDisplay();
 connectWS();
 </script>
 
