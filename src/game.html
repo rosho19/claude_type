@@ -625,7 +625,8 @@ function bridge(cmd) {
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connectWS() {
   let ws;
-  try { ws = new WebSocket('ws://localhost:3000'); } catch { return; }
+  const host = location.host || 'localhost:3000';
+  try { ws = new WebSocket('ws://' + host); } catch { return; }
 
   ws.addEventListener('message', e => {
     let msg;

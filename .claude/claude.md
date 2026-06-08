@@ -1,110 +1,58 @@
 # monkeytype-overlay
 
 ## what this is
-A typing game that opens in a browser while Claude Code is running.
-Controlled via a local Express server on port 3000.
-Claude Code hooks POST to the server to open/close/update the game.
+A Monkeytype-style typing game that pops up while Claude Code works, so you
+practice typing instead of doomscrolling. **macOS only.**
+
+It runs as a frameless, always-on-top **non-activating** panel — you can type in
+it without it stealing keyboard focus from your IDE. Claude Code hooks drive it
+through a small local server.
 
 ## architecture
-- game.html        — standalone typing game, connects via WebSocket
-- server.js        — Express + ws server, manages game state
-- .claude/hooks/   — shell scripts that curl the server
-- .claude/settings.json — hook configuration
+- `src/game.html`  — the typing game. Vanilla JS, no build step. Connects to the
+                     server over WebSocket; talks to the native shell via
+                     `window.webkit.messageHandlers.panel` (show / hide / quit).
+- `src/server.js`  — standalone Node (Express + ws) control server on
+                     127.0.0.1:3000. Serves game.html and relays lifecycle events
+                     to the game. Port via `MONKEYTYPE_PORT`.
+- `native/MonkeyPanel.swift` — the macOS shell: a borderless `.nonactivatingPanel`
+                     NSPanel hosting a WKWebView. Built by `native/build.sh` into
+                     `native/build/MonkeyType.app` (swiftc, no download).
+- `bin/cli.js`     — the `monkeytype` CLI (on/off/status/launch/install/uninstall/event).
+- `hooks/*.sh`     — templates copied into a project's `.claude/hooks/` by
+                     `monkeytype install`; each just calls `monkeytype event …`.
+- `.claude/settings.json` — wires the hooks (below).
+
+## event flow
+hook → `monkeytype event <e>` → curl POST to server → WS broadcast → game reacts.
+`monkeytype launch` spawns the server, waits for /health, then the panel
+(PIDs tracked in `~/.config/monkeytype/`).
+
+| hook event         | script             | endpoint     | effect                       |
+|--------------------|--------------------|--------------|------------------------------|
+| UserPromptSubmit   | open_game.sh       | /start       | working — show panel         |
+| PreToolUse         | resume_game.sh     | /resume      | working — re-enable typing   |
+| PermissionRequest  | permission_game.sh | /permission  | dim + disable typing         |
+| Stop               | close_game.sh      | /stop        | "done" banner                |
+| SessionEnd         | kill_server.sh     | /shutdown    | quit panel + server          |
+
+## server → game messages (over WS)
+- `{ type: "status", value: "working", show: bool }` — show=true brings panel forward
+- `{ type: "status", value: "done" }`                — done banner; never auto-closes
+- `{ type: "status", value: "permission" }`          — dim, disable input
+- `{ type: "control", value: "quit" }`               — panel quits
 
 ## game rules
-- no timer — stats only start on first keypress
-- 2-second idle resets stats and word line silently
-- game never auto-closes — user controls close via button
-- "claude done" banner appears on Stop event, stays until dismissed
+- no timer; stats (wpm/raw/acc) start on first keypress
+- 2-second idle silently resets stats and the word line
+- never auto-closes — the user closes it (or SessionEnd quits everything)
 
-## tech stack
-- vanilla JS only, no build step, single game.html file
-- Node/Express for the server, ws package for WebSocket
-- shell scripts for hooks (bash + curl, no dependencies)
+## build / run
+- `npm install` builds the panel (runs `native/build.sh`; skips on non-macOS)
+- per project: `monkeytype install`, then `monkeytype on`
+- requires macOS + Xcode command-line tools (swiftc); Node for the server
 
 ## code style
-- no typescript, no frameworks, no bundlers
+- vanilla JS, no TypeScript, no frameworks, no bundler
+- Swift only for the thin window shell; bash for hooks; server endpoints return JSON
 - comments only where logic is non-obvious
-- all server endpoints return JSON
-```
-
-This file gets read on every session start and saves you dozens of tokens re-explaining architecture on each prompt.
-
----
-
-## The prompts themselves, phase by phase
-
-Write these as separate Claude Code sessions with `/clear` between each one. Each prompt is one self-contained unit of work.
-
-**Phase 1 — game.html**
-```
-Build game.html: a self-contained Monkeytype clone.
-- Dark bg #323437, JetBrains Mono font loaded from Google Fonts
-- 200 common words pool, randomized 50-word line on load and on reset
-- Correct chars: #e2b714, wrong chars: #ca4754 with underline, upcoming: #646669
-- Stats (wpm, accuracy, word count) rendered below words — hidden until first keypress
-- WPM = (correct chars / 5) / elapsed minutes since first keypress
-- 2-second idle timer: if no keypress for 2000ms, silently reset stats to zero and
-  generate a new word line. No animation on reset.
-- WebSocket client: connects to ws://localhost:3000. Listens for messages:
-  { type: "status", value: "working" | "done" | "permission" | "resume" }
-  Renders a status banner at top based on value. Done banner has
-  "keep typing" (dismiss) and "close" (window.close()) buttons.
-  Permission banner dims the word area (opacity 0.3) and disables input.
-- No close button visible unless status is "done"
-- Close button calls window.close()
-```
-
-**Phase 2 — server.js**
-```
-Build server.js: Express + ws server on port 3000.
-
-Endpoints:
-POST /start     — if no WS client connected, open browser to game.html
-                  (use 'open' package). Track session_id from request body.
-                  Broadcast { type: "status", value: "working" }
-POST /stop      — broadcast { type: "status", value: "done" }
-                  do NOT close the browser. Update internal state only.
-POST /activity  — debounced 500ms, broadcast { type: "activity", tool: req.body.tool }
-POST /permission — broadcast { type: "status", value: "permission" }
-POST /resume    — broadcast { type: "status", value: "working" }
-POST /shutdown  — process.exit(0)
-GET  /health    — return { ok: true }
-
-WebSocket: track single client connection. On disconnect, clear client ref.
-Only honor /stop from the session_id that sent the most recent /start.
-Minimum display guard: if /stop arrives within 3s of /start, delay broadcast by
-(3000 - elapsed)ms.
-
-Dependencies: express, ws, open
-```
-
-**Phase 3 — hooks**
-```
-Create four shell scripts in .claude/hooks/ and the settings.json.
-
-open_game.sh — curl POST /start with session_id=$CLAUDE_SESSION_ID
-notify_tool.sh — read stdin JSON, extract tool_name, curl POST /activity
-close_game.sh — curl POST /stop with session_id=$CLAUDE_SESSION_ID  
-permission_game.sh — curl POST /permission
-resume_game.sh — curl POST /resume
-kill_server.sh — curl POST /shutdown
-
-All scripts: silent (redirect output to /dev/null), exit 0 always.
-
-settings.json hooks:
-- UserPromptSubmit → open_game.sh
-- PostToolUse (matcher: ".*") → notify_tool.sh (async: true)
-- Stop → close_game.sh
-- PermissionRequest → permission_game.sh
-- PreToolUse (matcher: ".*") → resume_game.sh
-- SessionEnd → kill_server.sh
-```
-
-**Phase 4 — startup script**
-```
-Create start.sh: checks if server is running (curl /health),
-starts it in background if not (node server.js &), 
-waits 500ms, then execs claude "$@"
-
-Make it executable. Add a note in README: alias cc='bash start.sh'
