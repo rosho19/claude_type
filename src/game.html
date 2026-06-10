@@ -371,6 +371,7 @@ let sessTotalCh   = 0;
 let sessTypingMs  = 0;
 let lastKeyTime   = 0;
 let lastSummary   = null;   // most recent finished session, for the done banner
+let hiddenBy      = null;   // why the panel is hidden: 'user' (Enter/Esc) | 'auto' (permission) | null
 
 let idleTimer         = null;
 let caretTimer        = null;
@@ -560,12 +561,22 @@ function hardReset() {
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (!inputEnabled) return;
   if (e.ctrlKey || e.altKey || e.metaKey) return;
 
   const key = e.key;
 
-  if (key === 'Escape') { hardReset(); return; }
+  // Enter / Escape hide the panel from any state — there is never a moment you
+  // can't dismiss it from the keyboard. The next prompt brings it back.
+  if (key === 'Enter' || key === 'Escape') {
+    e.preventDefault();
+    hiddenBy = 'user';
+    bridge('hide');
+    return;
+  }
+
+  if (!inputEnabled) return;
+
+  if (key === 'Tab') { e.preventDefault(); hardReset(); return; }
 
   if (key === 'Backspace') {
     e.preventDefault();
@@ -739,10 +750,18 @@ function connectWS() {
         if (msg.show) {                 // new prompt → bank the prior turn, surface the panel
           commitSession();
           lastSummary = null;
+          hiddenBy = null;
           bridge('show');
+        } else if (hiddenBy === 'auto') {
+          // Resumed after a permission prompt we auto-hid for — come back, but
+          // without taking the keyboard; the user may be mid-action in the terminal.
+          hiddenBy = null;
+          bridge('show-nokey');
         }
         break;
       case 'done': {
+        // Bank and render the summary even if the panel is hidden: it waits there
+        // silently (no re-show) and is replaced when the next prompt arrives.
         const summary = commitSession();
         if (summary) lastSummary = summary;
         showDoneBanner(lastSummary);
@@ -751,9 +770,13 @@ function connectWS() {
         break;
       }
       case 'permission':
+        // Hide so the keyboard snaps back to the terminal and the user can answer
+        // without clicking anything. A prior manual dismissal stays manual.
         showBanner('permission', '— waiting for your input');
         inputEnabled = false;
         wordsEl.classList.add('dimmed');
+        if (!hiddenBy) hiddenBy = 'auto';
+        bridge('hide');
         break;
     }
   });

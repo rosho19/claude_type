@@ -51,8 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         panel.hasShadow              = true
         panel.backgroundColor        = NSColor(red: 0x32 / 255.0, green: 0x34 / 255.0,
                                                blue: 0x37 / 255.0, alpha: 1)
-        // Float above other apps, follow across Spaces, and sit over full-screen apps.
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        // Float above other apps and sit over full-screen apps. .moveToActiveSpace
+        // (rather than .canJoinAllSpaces) brings the panel to whatever Space is
+        // active when it's shown, but lets the user escape it by switching desktops.
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
 
         let config = WKWebViewConfiguration()
         let ucc = WKUserContentController()
@@ -91,6 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             case "show":
                 self.panel.makeKeyAndOrderFront(nil)   // key, but does not activate the app
                 self.panel.makeFirstResponder(self.webView)
+            case "show-nokey":
+                // Reappear without taking the keyboard — used when returning after
+                // a permission prompt; the user clicks the panel when they want to type.
+                self.panel.orderFront(nil)
             case "hide":
                 self.panel.orderOut(nil)
             case "quit":

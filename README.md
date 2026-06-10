@@ -17,13 +17,18 @@ close it.
 Claude Code fires lifecycle **hooks** as it runs. Those hooks talk to a tiny
 local server, which drives the game:
 
-| You / Claude              | Hook                | The panel…                                |
-|---------------------------|---------------------|-------------------------------------------|
-| Submit a prompt           | `UserPromptSubmit`  | appears, ready to type                    |
-| Claude needs permission   | `PermissionRequest` | dims so you can answer in the terminal    |
-| Claude resumes working    | `PreToolUse`        | re-enables typing                         |
-| Claude finishes the turn  | `Stop`              | shows a "claude is done" banner           |
-| Session ends              | `SessionEnd`        | closes                                    |
+| You / Claude              | Hook                | The panel…                                       |
+|---------------------------|---------------------|--------------------------------------------------|
+| Submit a prompt           | `UserPromptSubmit`  | appears, ready to type                           |
+| Claude needs permission   | `PermissionRequest` | hides — the keyboard snaps back to your terminal |
+| Claude resumes working    | `PreToolUse`        | returns (without stealing the keyboard)          |
+| Claude finishes the turn  | `Stop`              | shows "claude is done" + your words · wpm · acc  |
+| Session ends              | `SessionEnd`        | closes                                           |
+
+**Dismiss it anytime** with **Enter** or **Esc** — the keyboard goes straight
+back to your editor, and the panel stays out of your way until your next prompt.
+If Claude finishes while you've dismissed it, nothing pops up: the summary waits
+on the panel for whenever it next appears. **Tab** restarts the words.
 
 Under the hood: a frameless macOS `NSPanel` hosts a WebView running the game
 (`src/game.html`); a small Node server (`src/server.js`) relays events over a
@@ -86,8 +91,9 @@ monkeytype launch     start the server + panel manually
 ## Notes & limitations
 
 - **macOS only.** The non-activating floating panel relies on AppKit (`NSPanel`).
-- After a permission prompt, typing is re-enabled but the panel does not grab
-  keyboard focus back automatically — click it once to resume typing.
+- When the panel returns after a permission prompt it deliberately doesn't take
+  the keyboard (you may be mid-action in the terminal) — click it once to
+  resume typing.
 - Word fonts load from Google Fonts; offline, the game falls back to your system
   monospace font.
 

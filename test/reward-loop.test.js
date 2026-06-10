@@ -12,8 +12,10 @@
 //   • best wpm + lifetime word count persist to localStorage (and the drag bar)
 //   • a beaten record raises the "new best!" flourish
 //   • banking is idempotent (a repeated Stop records nothing)
-//   • session totals survive the idle/Escape resets between typing bursts
+//   • session totals survive the idle/Tab resets between typing bursts
 //   • typing is ignored during a permission gate and resumes afterward
+//   • permission auto-hides the panel; resume restores it without the keyboard
+//   • Enter/Escape dismiss manually — silent until the next prompt re-shows
 //
 // Run with `npm test`. No test framework — just asserts and an exit code.
 
@@ -23,6 +25,7 @@ const vm = require('vm');
 
 let fakeClock = 1_000_000;
 const captured = { keydown: null, wsMessage: null };
+const bridgeCalls = [];   // commands game.html sends to the native panel shell
 
 // ── selector matching (supports ".a", ".a:not(.b)", and comma lists) ──────────
 function matchOne(el, part) {
@@ -79,7 +82,7 @@ const ctx = {
   console, JSON, Math,
   Date: { now: () => fakeClock },
   location: { host: '' },
-  window: { webkit: undefined },
+  window: { webkit: { messageHandlers: { panel: { postMessage: cmd => bridgeCalls.push(cmd) } } } },
   localStorage: {
     getItem: k => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
@@ -114,10 +117,10 @@ function typeWords(n, startIdx = 0) {
     press(' ');
   }
 }
-// Escape → hardReset repopulates the board and returns wIdx to 0 while the session
+// Tab → hardReset repopulates the board and returns wIdx to 0 while the session
 // totals survive, so we can reliably type N *correct* words (matched from index 0)
-// no matter where the persistent stream left off.
-const typeFresh = n => { press('Escape'); typeWords(n, 0); };
+// no matter where the persistent stream left off. (Escape now hides the panel.)
+const typeFresh = n => { press('Tab'); typeWords(n, 0); };
 const send = obj => captured.wsMessage({ data: JSON.stringify(obj) });
 const readStore = () => JSON.parse(store.get('monkeytype.stats.v1') || '{}');
 
@@ -141,10 +144,10 @@ ok(/best \d+/.test(elements.lifetime.textContent) && /words/.test(elements.lifet
 send({ type: 'status', value: 'done' });
 ok(readStore().lifetimeWords === 12, `repeat done is idempotent — still 12 (got ${readStore().lifetimeWords})`);
 
-// ── 3. session totals survive an idle/Escape reset mid-turn ───────────────────
+// ── 3. session totals survive an idle/Tab reset mid-turn ──────────────────────
 send({ type: 'status', value: 'working', show: true });
 typeFresh(3);                                              // sess = 3
-typeFresh(2);                                              // the Escape here = a mid-turn idle reset; sess must carry → 5
+typeFresh(2);                                              // the Tab here = a mid-turn idle reset; sess must carry → 5
 send({ type: 'status', value: 'done' });
 ok(readStore().lifetimeWords === 12 + 5, `words survive idle reset: 17 total (got ${readStore().lifetimeWords})`);
 
@@ -157,6 +160,29 @@ send({ type: 'status', value: 'working', show: false });  // resume same turn
 typeFresh(2);                                              // sess = 6
 send({ type: 'status', value: 'done' });
 ok(readStore().lifetimeWords === 17 + 6, `typing ignored during permission; 4+2 banked → 23 (got ${readStore().lifetimeWords})`);
+
+// ── 5. permission auto-hides; resume restores without the keyboard ────────────
+send({ type: 'status', value: 'working', show: true });
+let mark = bridgeCalls.length;
+send({ type: 'status', value: 'permission' });
+ok(bridgeCalls[mark] === 'hide', `permission → panel hides (got ${bridgeCalls[mark]})`);
+send({ type: 'status', value: 'working', show: false });
+ok(bridgeCalls[mark + 1] === 'show-nokey', `resume after permission → returns sans keyboard (got ${bridgeCalls[mark + 1]})`);
+
+// ── 6. manual dismissal sticks; done stays silent; next prompt replaces it ────
+typeFresh(2);                                              // sess = 2
+press('Enter');                                            // user dismisses mid-turn
+ok(bridgeCalls[bridgeCalls.length - 1] === 'hide', 'Enter hides the panel');
+mark = bridgeCalls.length;
+send({ type: 'status', value: 'working', show: false });   // a later resume…
+ok(bridgeCalls.length === mark, 'resume does not override a manual dismissal');
+send({ type: 'status', value: 'done' });
+ok(bridgeCalls.length === mark, 'done while dismissed is silent — no re-show');
+ok(/2 words/.test(bannerEl._children[0].textContent), `summary waits on the hidden panel: "${bannerEl._children[0].textContent}"`);
+ok(readStore().lifetimeWords === 23 + 2, `dismissed-turn words still bank → 25 (got ${readStore().lifetimeWords})`);
+send({ type: 'status', value: 'working', show: true });
+ok(bridgeCalls[bridgeCalls.length - 1] === 'show', 'next prompt re-shows the panel');
+ok(bannerEl.className === '' && bannerEl._children.length === 0, 'new prompt replaces the waiting summary');
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

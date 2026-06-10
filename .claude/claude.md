@@ -11,7 +11,8 @@ through a small local server.
 ## architecture
 - `src/game.html`  — the typing game. Vanilla JS, no build step. Connects to the
                      server over WebSocket; talks to the native shell via
-                     `window.webkit.messageHandlers.panel` (show / hide / quit).
+                     `window.webkit.messageHandlers.panel`
+                     (show / show-nokey / hide / quit).
 - `src/server.js`  — standalone Node (Express + ws) control server on
                      127.0.0.1:3000. Serves game.html and relays lifecycle events
                      to the game. Port via `MONKEYTYPE_PORT`.
@@ -28,13 +29,13 @@ hook → `monkeytype event <e>` → curl POST to server → WS broadcast → gam
 `monkeytype launch` spawns the server, waits for /health, then the panel
 (PIDs tracked in `~/.config/monkeytype/`).
 
-| hook event         | script             | endpoint     | effect                       |
-|--------------------|--------------------|--------------|------------------------------|
-| UserPromptSubmit   | open_game.sh       | /start       | working — show panel         |
-| PreToolUse         | resume_game.sh     | /resume      | working — re-enable typing   |
-| PermissionRequest  | permission_game.sh | /permission  | dim + disable typing         |
-| Stop               | close_game.sh      | /stop        | "done" banner                |
-| SessionEnd         | kill_server.sh     | /shutdown    | quit panel + server          |
+| hook event         | script             | endpoint     | effect                                          |
+|--------------------|--------------------|--------------|-------------------------------------------------|
+| UserPromptSubmit   | open_game.sh       | /start       | bank prior turn, show panel (takes keyboard)    |
+| PreToolUse         | resume_game.sh     | /resume      | re-enable typing; restore panel if auto-hidden  |
+| PermissionRequest  | permission_game.sh | /permission  | hide panel — keyboard returns to the terminal   |
+| Stop               | close_game.sh      | /stop        | bank stats, summary banner (silent if hidden)   |
+| SessionEnd         | kill_server.sh     | /shutdown    | quit panel + server                             |
 
 ## server → game messages (over WS)
 - `{ type: "status", value: "working", show: bool }` — show=true brings panel forward
@@ -44,8 +45,14 @@ hook → `monkeytype event <e>` → curl POST to server → WS broadcast → gam
 
 ## game rules
 - no timer; stats (wpm/raw/acc) start on first keypress
-- 2-second idle silently resets stats and the word line
-- never auto-closes — the user closes it (or SessionEnd quits everything)
+- 2-second idle silently resets the burst stats and word line; Tab does too
+- session totals survive those resets and are banked once per Claude turn into
+  localStorage (best wpm, lifetime words → shown in the drag bar)
+- Enter/Escape hide the panel anytime (`hiddenBy='user'` — stays hidden until
+  the next prompt); a permission prompt auto-hides it (`hiddenBy='auto'` —
+  restored by the next resume, without taking the keyboard)
+- a turn finishing while hidden stays silent: the summary waits on the panel
+  and is replaced when the next prompt re-shows it
 
 ## build / run
 - `npm install` builds the panel (runs `native/build.sh`; skips on non-macOS)
