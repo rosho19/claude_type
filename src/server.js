@@ -24,6 +24,7 @@ const GAME_HTML      = path.join(__dirname, 'game.html');
 let wsClient       = null;
 let currentSession = null;
 let startTime      = null;
+let lastStatus     = null;   // last status broadcast — replayed to a late-connecting panel
 
 // ── Express + WebSocket ───────────────────────────────────────────────────────
 const expressApp = express();
@@ -34,10 +35,15 @@ expressApp.use(express.json());
 
 wss.on('connection', ws => {
   wsClient = ws;
+  // The panel's WebView may finish loading and open this socket *after* a /start
+  // already fired (first prompt of a session). Replay the latest status so a
+  // late-connecting panel still shows itself instead of sitting there hidden.
+  if (lastStatus) ws.send(JSON.stringify(lastStatus));
   ws.on('close', () => { if (wsClient === ws) wsClient = null; });
 });
 
 function broadcast(msg) {
+  if (msg.type === 'status') lastStatus = msg;   // remember even if no client is connected yet
   if (wsClient && wsClient.readyState === WebSocket.OPEN) {
     wsClient.send(JSON.stringify(msg));
   }
