@@ -133,8 +133,6 @@
       will-change: transform;
     }
 
-    #words.dimmed { opacity: 0.3; transition: opacity 0.15s; }
-
     .word {
       display: inline-flex;
       height: var(--lh);
@@ -209,6 +207,19 @@
 
     #stats.visible { opacity: 1; }
 
+    /* ── Hint footer ──────────────────────────────────────── */
+    #hint {
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: var(--sub);
+      opacity: 0.65;
+      flex-shrink: 0;
+    }
+
     .stat-label {
       font-size: 11px;
       color: var(--sub);
@@ -254,6 +265,8 @@
     </div>
   </div>
 </div>
+
+<div id="hint">esc — hide · tab — restart</div>
 
 <script>
 // ── Word pool (500 words, frequency-based) ────────────────────────────────────
@@ -345,6 +358,7 @@ const sWpm      = document.getElementById('s-wpm');
 const sRaw      = document.getElementById('s-raw');
 const sAcc      = document.getElementById('s-acc');
 const lifetimeEl = document.getElementById('lifetime');
+const hintEl    = document.getElementById('hint');
 
 // ── Game state ────────────────────────────────────────────────────────────────
 const WORDS_INITIAL  = 100;
@@ -353,6 +367,11 @@ const WORDS_AHEAD    = 30;   // add more words when this many remain
 const LINE_HEIGHT    = 48;   // must match CSS --lh
 const VISIBLE_LINES  = 4;
 const IDLE_MS        = 2000;   // typing-burst / idle-reset threshold
+const RAISE_DELAY_MS = 1200;   // lag before raising the panel after a resume —
+                               // back-to-back permission requests cancel it
+
+const HINT_DEFAULT    = 'esc — hide · tab — restart';
+const HINT_PERMISSION = "esc — answer claude · panel returns when it's running";
 
 let wordEls    = [];
 let wIdx       = 0;
@@ -371,11 +390,13 @@ let sessTotalCh   = 0;
 let sessTypingMs  = 0;
 let lastKeyTime   = 0;
 let lastSummary   = null;   // most recent finished session, for the done banner
-let hiddenBy      = null;   // why the panel is hidden: 'user' (Enter/Esc) | 'auto' (permission) | null
+let hiddenBy      = null;   // 'user' when Esc closed the panel (stays closed until next prompt)
+let permPending   = false;  // a permission request is waiting on the user
+let behind        = false;  // user pressed Esc during a permission → panel slipped behind the IDE
+let raiseTimer    = null;   // pending debounced raise after a resume
 
 let idleTimer         = null;
 let caretTimer        = null;
-let inputEnabled      = true;
 let translateY        = 0;
 let statsInterval     = null;
 let presentedBottomRow = 0;  // highest bottom-row offsetTop shown without animation
@@ -548,7 +569,6 @@ function hardReset() {
   wIdx       = 0;
   cIdx       = 0;
   translateY = 0;
-  inputEnabled = true;
 
   wordEls = [];
   wordsEl.innerHTML = '';
@@ -571,16 +591,21 @@ document.addEventListener('keydown', e => {
 
   const key = e.key;
 
-  // Enter / Escape hide the panel from any state — there is never a moment you
-  // can't dismiss it from the keyboard. The next prompt brings it back.
-  if (key === 'Enter' || key === 'Escape') {
+  // Escape gets the panel out of the way. During a pending permission it slips
+  // *behind* the IDE (keyboard returns to the terminal) and is raised again once
+  // Claude is really running; otherwise it closes until the next prompt.
+  // Enter deliberately does nothing — flow-typists hit it in place of space.
+  if (key === 'Escape') {
     e.preventDefault();
-    hiddenBy = 'user';
-    bridge('hide');
+    if (permPending && !behind) {
+      behind = true;
+      bridge('drop-back');
+    } else {
+      hiddenBy = 'user';
+      bridge('hide');
+    }
     return;
   }
-
-  if (!inputEnabled) return;
 
   if (key === 'Tab') { e.preventDefault(); hardReset(); return; }
 
@@ -751,41 +776,53 @@ function connectWS() {
     switch (msg.value) {
       case 'working':
         hideBanner();
-        inputEnabled = true;
-        wordsEl.classList.remove('dimmed');
+        setHint(HINT_DEFAULT);
         if (msg.show) {                 // new prompt → bank the prior turn, surface the panel
           commitSession();
           lastSummary = null;
           hiddenBy = null;
+          permPending = false;
+          behind = false;
+          clearTimeout(raiseTimer);
+          raiseTimer = null;
           bridge('show');
-        } else if (hiddenBy === 'auto') {
-          // Resumed after a permission prompt we auto-hid for — come back, but
-          // without taking the keyboard; the user may be mid-action in the terminal.
-          hiddenBy = null;
-          bridge('show-nokey');
+        } else {
+          // Resume (PreToolUse): the permission was answered. If the user slipped
+          // the panel behind to answer, raise it once Claude has really been
+          // working for a beat — a new permission request cancels this timer, so
+          // back-to-back prompts don't keep yanking the panel forward.
+          permPending = false;
+          if (behind && raiseTimer === null) {
+            raiseTimer = setTimeout(() => {
+              raiseTimer = null;
+              behind = false;
+              bridge('raise');
+            }, RAISE_DELAY_MS);
+          }
         }
         break;
       case 'done': {
-        // Bank and render the summary. If we auto-hid for a permission prompt and
-        // the turn ended before any resume fired, bring the panel back (without
-        // grabbing the keyboard) so "done" isn't lost on a hidden panel. A manual
-        // dismissal (hiddenBy === 'user') stays hidden and silent.
+        // Bank and render the summary. From behind the IDE the panel returns
+        // (without taking the keyboard) so "done" isn't lost; an Esc-closed panel
+        // stays hidden and silent — the summary waits for the next prompt.
+        permPending = false;
+        clearTimeout(raiseTimer);
+        raiseTimer = null;
         const summary = commitSession();
         if (summary) lastSummary = summary;
         showDoneBanner(lastSummary);
-        inputEnabled = true;
-        wordsEl.classList.remove('dimmed');
-        if (hiddenBy === 'auto') { hiddenBy = null; bridge('show-nokey'); }
+        setHint(HINT_DEFAULT);
+        if (behind) { behind = false; bridge('show-nokey'); }
         break;
       }
       case 'permission':
-        // Hide so the keyboard snaps back to the terminal and the user can answer
-        // without clicking anything. A prior manual dismissal stays manual.
-        showBanner('permission', '— waiting for your input');
-        inputEnabled = false;
-        wordsEl.classList.add('dimmed');
-        if (!hiddenBy) hiddenBy = 'auto';
-        bridge('hide');
+        // The panel stays put and stays typeable — the user decides when to stop.
+        // Esc slips it behind the IDE so they can answer in the terminal.
+        permPending = true;
+        clearTimeout(raiseTimer);
+        raiseTimer = null;
+        showBanner('permission', '— claude needs your input');
+        setHint(HINT_PERMISSION);
         break;
     }
   });
@@ -797,6 +834,10 @@ function connectWS() {
 function hideBanner() {
   bannerEl.className = '';
   bannerEl.innerHTML = '';
+}
+
+function setHint(text) {
+  hintEl.textContent = text;
 }
 
 function showBanner(cls, text) {

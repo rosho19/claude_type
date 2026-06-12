@@ -12,7 +12,7 @@ through a small local server.
 - `src/game.html`  — the typing game. Vanilla JS, no build step. Connects to the
                      server over WebSocket; talks to the native shell via
                      `window.webkit.messageHandlers.panel`
-                     (show / show-nokey / hide / quit).
+                     (show / show-nokey / raise / drop-back / hide / quit).
 - `src/server.js`  — standalone Node (Express + ws) control server on
                      127.0.0.1:3000. Serves game.html and relays lifecycle events
                      to the game. Port via `MONKEYTYPE_PORT`.
@@ -32,9 +32,9 @@ hook → `monkeytype event <e>` → curl POST to server → WS broadcast → gam
 | hook event         | script             | endpoint     | effect                                          |
 |--------------------|--------------------|--------------|-------------------------------------------------|
 | UserPromptSubmit   | open_game.sh       | /start       | bank prior turn, show panel (takes keyboard)    |
-| PreToolUse         | resume_game.sh     | /resume      | re-enable typing; restore panel if auto-hidden  |
-| PermissionRequest  | permission_game.sh | /permission  | hide panel — keyboard returns to the terminal   |
-| Stop               | close_game.sh      | /stop        | bank stats, summary banner (silent if hidden)   |
+| PreToolUse         | resume_game.sh     | /resume      | debounced raise if the user yielded with Esc    |
+| PermissionRequest  | permission_game.sh | /permission  | banner + hint — panel stays up and typeable     |
+| Stop               | close_game.sh      | /stop        | bank stats, summary banner (silent if closed)   |
 | SessionEnd         | kill_server.sh     | /shutdown    | quit panel + server                             |
 
 ## server → game messages (over WS)
@@ -48,12 +48,15 @@ hook → `monkeytype event <e>` → curl POST to server → WS broadcast → gam
 - 2-second idle silently resets the burst stats and word line; Tab does too
 - session totals survive those resets and are banked once per Claude turn into
   localStorage (best wpm, lifetime words → shown in the drag bar)
-- Enter/Escape hide the panel anytime (`hiddenBy='user'` — stays hidden until
-  the next prompt); a permission prompt auto-hides it (`hiddenBy='auto'` —
-  restored by the next resume, without taking the keyboard)
-- a turn finishing while *manually* hidden (Enter/Esc) stays silent — the summary
-  waits on the panel, replaced at the next prompt; but if it was *auto*-hidden for
-  a permission prompt and no resume followed, `done` brings it back (no keyboard)
+- a permission request leaves the panel up and typeable; Esc slips it behind the
+  IDE (`drop-back`: orderOut releases the keyboard, then orderBack at .normal
+  level). After resume, a RAISE_DELAY_MS (1.2s) debounce raises it with the
+  keyboard (`raise`); a new permission request cancels the pending raise
+- Esc outside a permission closes until the next prompt (`hiddenBy='user'`);
+  Enter is deliberately inert (flow-typists hit it in place of space)
+- a turn finishing while closed stays silent (summary waits on the panel);
+  while *behind*, `done` brings it back without the keyboard (`show-nokey`)
+- the #hint footer shows the esc/tab blurb and swaps during a pending permission
 - caret is positioned relative to #words minus the target translateY, so it lands
   on its final spot during the 280ms scroll instead of lagging a line behind
 

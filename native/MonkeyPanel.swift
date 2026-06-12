@@ -94,14 +94,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             guard let self = self else { return }
             switch cmd {
             case "show":
+                self.panel.level = .floating           // restore if we were dropped back
                 self.panel.makeKeyAndOrderFront(nil)   // key, but does not activate the app
                 self.panel.makeFirstResponder(self.webView)
             case "show-nokey":
-                // Reappear without taking the keyboard — used when returning after
-                // a permission prompt; the user clicks the panel when they want to
-                // type. orderFrontRegardless so it surfaces above the frontmost app
-                // even though our app stays in the background.
+                // Reappear without taking the keyboard — the user may be typing in
+                // the terminal. orderFrontRegardless so it surfaces above the
+                // frontmost app even though our app stays in the background.
+                self.panel.level = .floating
                 self.panel.orderFrontRegardless()
+            case "drop-back":
+                // Slip behind the IDE so the user can answer a permission prompt:
+                // orderOut first releases key-window status (the keyboard snaps
+                // back to the active app), then re-show at .normal level behind
+                // the other windows. Still visible — just out of the way.
+                self.panel.orderOut(nil)
+                self.panel.level = .normal
+                self.panel.orderBack(nil)
+            case "raise":
+                // Claude is really running again — come back to the front and take
+                // the keyboard so typing resumes seamlessly.
+                self.panel.level = .floating
+                self.panel.makeKeyAndOrderFront(nil)
+                self.panel.makeFirstResponder(self.webView)
             case "hide":
                 self.panel.orderOut(nil)
             case "quit":

@@ -17,18 +17,24 @@ close it.
 Claude Code fires lifecycle **hooks** as it runs. Those hooks talk to a tiny
 local server, which drives the game:
 
-| You / Claude              | Hook                | The panel…                                       |
-|---------------------------|---------------------|--------------------------------------------------|
-| Submit a prompt           | `UserPromptSubmit`  | appears, ready to type                           |
-| Claude needs permission   | `PermissionRequest` | hides — the keyboard snaps back to your terminal |
-| Claude resumes working    | `PreToolUse`        | returns (without stealing the keyboard)          |
-| Claude finishes the turn  | `Stop`              | shows "claude is done" + your words · wpm · acc  |
-| Session ends              | `SessionEnd`        | closes                                           |
+| You / Claude              | Hook                | The panel…                                         |
+|---------------------------|---------------------|----------------------------------------------------|
+| Submit a prompt           | `UserPromptSubmit`  | appears, ready to type                             |
+| Claude needs permission   | `PermissionRequest` | stays up — keep typing; **Esc** when you're ready  |
+| Claude resumes working    | `PreToolUse`        | rises back to front once Claude is really running  |
+| Claude finishes the turn  | `Stop`              | shows "claude is done" + your words · wpm · acc    |
+| Session ends              | `SessionEnd`        | closes                                             |
 
-**Dismiss it anytime** with **Enter** or **Esc** — the keyboard goes straight
-back to your editor, and the panel stays out of your way until your next prompt.
-If Claude finishes while you've dismissed it, nothing pops up: the summary waits
-on the panel for whenever it next appears. **Tab** restarts the words.
+**Permission prompts never rugpull you.** The panel stays put until *you* press
+**Esc** — then it slips behind your IDE (keyboard back in the terminal, answer
+with zero clicks) and rises again, keyboard and all, once Claude has truly been
+working for a beat. Back-to-back permission requests keep it tucked away until
+the last one is answered.
+
+**Esc** outside a permission closes the panel until your next prompt — if Claude
+finishes meanwhile, nothing pops up; the summary waits on the panel. **Tab**
+restarts the words. (Enter deliberately does nothing — it's too easy to hit
+when you mean space.)
 
 Under the hood: a frameless macOS `NSPanel` hosts a WebView running the game
 (`src/game.html`); a small Node server (`src/server.js`) relays events over a
@@ -91,9 +97,9 @@ monkeytype launch     start the server + panel manually
 ## Notes & limitations
 
 - **macOS only.** The non-activating floating panel relies on AppKit (`NSPanel`).
-- When the panel returns after a permission prompt it deliberately doesn't take
-  the keyboard (you may be mid-action in the terminal) — click it once to
-  resume typing.
+- The post-permission raise takes the keyboard so you can resume typing
+  instantly. If you happen to be typing a queued message to Claude at that exact
+  moment, those keystrokes land in the game — press Esc and finish your thought.
 - Word fonts load from Google Fonts; offline, the game falls back to your system
   monospace font.
 
