@@ -15,6 +15,7 @@
 //   • session totals survive the idle/Tab resets between typing bursts
 //   • typing is ignored during a permission gate and resumes afterward
 //   • permission auto-hides the panel; resume restores it without the keyboard
+//   • an auto-hidden panel also returns on done if the turn ends with no resume
 //   • Enter/Escape dismiss manually — silent until the next prompt re-shows
 //
 // Run with `npm test`. No test framework — just asserts and an exit code.
@@ -183,6 +184,14 @@ ok(readStore().lifetimeWords === 23 + 2, `dismissed-turn words still bank → 25
 send({ type: 'status', value: 'working', show: true });
 ok(bridgeCalls[bridgeCalls.length - 1] === 'show', 'next prompt re-shows the panel');
 ok(bannerEl.className === '' && bannerEl._children.length === 0, 'new prompt replaces the waiting summary');
+
+// ── 7. auto-hidden by permission; turn ends with no resume → panel returns ────
+typeFresh(1);
+mark = bridgeCalls.length;
+send({ type: 'status', value: 'permission' });
+ok(bridgeCalls[mark] === 'hide', 'permission auto-hides the panel');
+send({ type: 'status', value: 'done' });
+ok(bridgeCalls[bridgeCalls.length - 1] === 'show-nokey', 'done with no intervening resume brings the panel back (show-nokey)');
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

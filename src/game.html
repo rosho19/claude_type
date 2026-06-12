@@ -440,11 +440,17 @@ function updateCaret() {
   let targetChar = allChars[cIdx] ?? allChars[allChars.length - 1];
   if (!targetChar) return;
 
-  const wrapRect = wrapperEl.getBoundingClientRect();
-  const charRect = targetChar.getBoundingClientRect();
+  // Position the caret relative to #words (not the wrapper) and subtract the
+  // *target* translateY. #words and the char animate together, so the difference
+  // of their rects is the stable content offset regardless of the in-flight
+  // scroll — letting the caret land on its final spot immediately instead of
+  // chasing the 280ms scroll and lagging a line behind on wrap (and on backspace
+  // across a line).
+  const wordsRect = wordsEl.getBoundingClientRect();
+  const charRect  = targetChar.getBoundingClientRect();
 
-  let x = charRect.left - wrapRect.left;
-  let y = charRect.top  - wrapRect.top;
+  let x = charRect.left - wordsRect.left;
+  let y = (charRect.top - wordsRect.top) - translateY;
 
   // If caret is after the last char, place it at right edge
   if (cIdx >= allChars.length) x += charRect.width;
@@ -760,13 +766,16 @@ function connectWS() {
         }
         break;
       case 'done': {
-        // Bank and render the summary even if the panel is hidden: it waits there
-        // silently (no re-show) and is replaced when the next prompt arrives.
+        // Bank and render the summary. If we auto-hid for a permission prompt and
+        // the turn ended before any resume fired, bring the panel back (without
+        // grabbing the keyboard) so "done" isn't lost on a hidden panel. A manual
+        // dismissal (hiddenBy === 'user') stays hidden and silent.
         const summary = commitSession();
         if (summary) lastSummary = summary;
         showDoneBanner(lastSummary);
         inputEnabled = true;
         wordsEl.classList.remove('dimmed');
+        if (hiddenBy === 'auto') { hiddenBy = null; bridge('show-nokey'); }
         break;
       }
       case 'permission':

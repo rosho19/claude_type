@@ -51,8 +51,11 @@ hook → `monkeytype event <e>` → curl POST to server → WS broadcast → gam
 - Enter/Escape hide the panel anytime (`hiddenBy='user'` — stays hidden until
   the next prompt); a permission prompt auto-hides it (`hiddenBy='auto'` —
   restored by the next resume, without taking the keyboard)
-- a turn finishing while hidden stays silent: the summary waits on the panel
-  and is replaced when the next prompt re-shows it
+- a turn finishing while *manually* hidden (Enter/Esc) stays silent — the summary
+  waits on the panel, replaced at the next prompt; but if it was *auto*-hidden for
+  a permission prompt and no resume followed, `done` brings it back (no keyboard)
+- caret is positioned relative to #words minus the target translateY, so it lands
+  on its final spot during the 280ms scroll instead of lagging a line behind
 
 ## build / run
 - `npm install` builds the panel (runs `native/build.sh`; skips on non-macOS)
